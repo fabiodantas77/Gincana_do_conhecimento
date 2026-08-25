@@ -2,8 +2,8 @@
 
 O site possui duas páginas:
 
-- `/` — placar público, somente leitura e atualizado em tempo real.
-- `/admin/` — área de cadastro e lançamento de pontos, protegida por login.
+- `/` — placar público, somente leitura, com rankings Matutino e Vespertino atualizados em tempo real.
+- `/admin/` — área de cadastro e lançamento de pontos, protegida por login; selecione o turno antes de editar.
 
 ## Configuração do Supabase
 

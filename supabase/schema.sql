@@ -1,7 +1,7 @@
 -- Execute este arquivo no SQL Editor do Supabase.
 create table if not exists public.championship_data (
   id boolean primary key default true check (id),
-  data jsonb not null default '{"teams": [], "events": [], "scores": {}}'::jsonb,
+  data jsonb not null default '{"events": [], "competitions": {"morning": {"teams": [], "scores": {}}, "afternoon": {"teams": [], "scores": {}}}}'::jsonb,
   updated_at timestamptz not null default now()
 );
 

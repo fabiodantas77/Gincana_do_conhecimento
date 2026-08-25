@@ -16,6 +16,10 @@ import {
 import { isSupabaseConfigured, supabase } from "./src/supabase";
 
 const STORAGE_KEY = "gincana-campeonato-v1";
+const TURNS = [
+  { id: "morning", label: "Turno Matutino" },
+  { id: "afternoon", label: "Turno Vespertino" },
+];
 
 const TEAM_COLORS = [
   "#EF4444", "#F97316", "#F59E0B", "#EAB308",
@@ -27,27 +31,25 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-function normalizeData(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  if (!Array.isArray(value.teams) || !Array.isArray(value.events)) return null;
+function emptyCompetition() {
+  return { teams: [], scores: {} };
+}
 
-  const teams = value.teams
+function normalizeCompetition(value, eventIds) {
+  const source = value && typeof value === "object" ? value : {};
+  const teams = Array.isArray(source.teams) ? source.teams
     .filter((team) => team && typeof team.id === "string" && typeof team.name === "string")
     .map((team, index) => ({
       id: team.id,
       name: team.name.trim() || `Equipe ${index + 1}`,
       color: typeof team.color === "string" ? team.color : TEAM_COLORS[index % TEAM_COLORS.length],
-    }));
-  const events = value.events
-    .filter((event) => event && typeof event.id === "string" && typeof event.name === "string")
-    .map((event, index) => ({ id: event.id, name: event.name.trim() || `Prova ${index + 1}` }));
-  const validEventIds = new Set(events.map((event) => event.id));
+    })) : [];
   const validTeamIds = new Set(teams.map((team) => team.id));
   const scores = {};
 
-  if (value.scores && typeof value.scores === "object" && !Array.isArray(value.scores)) {
-    Object.entries(value.scores).forEach(([eventId, eventScores]) => {
-      if (!validEventIds.has(eventId) || !eventScores || typeof eventScores !== "object" || Array.isArray(eventScores)) return;
+  if (source.scores && typeof source.scores === "object" && !Array.isArray(source.scores)) {
+    Object.entries(source.scores).forEach(([eventId, eventScores]) => {
+      if (!eventIds.has(eventId) || !eventScores || typeof eventScores !== "object" || Array.isArray(eventScores)) return;
       const cleanedScores = {};
       Object.entries(eventScores).forEach(([teamId, score]) => {
         const numberScore = Number(score);
@@ -56,8 +58,24 @@ function normalizeData(value) {
       scores[eventId] = cleanedScores;
     });
   }
+  return { teams, scores };
+}
 
-  return { teams, events, scores };
+function normalizeData(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (!Array.isArray(value.events)) return null;
+  const events = value.events
+    .filter((event) => event && typeof event.id === "string" && typeof event.name === "string")
+    .map((event, index) => ({ id: event.id, name: event.name.trim() || `Prova ${index + 1}` }));
+  const eventIds = new Set(events.map((event) => event.id));
+  const legacyCompetition = { teams: value.teams, scores: value.scores };
+  return {
+    events,
+    competitions: {
+      morning: normalizeCompetition(value.competitions?.morning || legacyCompetition, eventIds),
+      afternoon: normalizeCompetition(value.competitions?.afternoon, eventIds),
+    },
+  };
 }
 
 function loadInitialState() {
@@ -71,12 +89,13 @@ function loadInitialState() {
   } catch (e) {
     console.error("Falha ao carregar dados salvos:", e);
   }
-  return { teams: [], events: [], scores: {} };
+  return { events: [], competitions: { morning: emptyCompetition(), afternoon: emptyCompetition() } };
 }
 
 export default function App() {
   const [data, setData] = useState(loadInitialState);
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTurn, setActiveTurn] = useState("morning");
   const [saveStatus, setSaveStatus] = useState("saved");
   const [authState, setAuthState] = useState(isSupabaseConfigured ? "checking" : "unconfigured");
   const [isAdmin, setIsAdmin] = useState(false);
@@ -86,7 +105,8 @@ export default function App() {
   const remoteDataRef = useRef("");
   const isAdminPage = window.location.pathname.replace(/\/$/, "").endsWith("/admin");
 
-  const { teams, events, scores } = data;
+  const { events, competitions } = data;
+  const { teams, scores } = competitions[activeTurn] || emptyCompetition();
 
   useEffect(() => {
     if (!isSupabaseConfigured) return undefined;
@@ -178,25 +198,32 @@ export default function App() {
 
   function addTeam(name, color) {
     if (!name || !name.trim()) return;
-    setData((prev) => ({
-      ...prev,
-      teams: [
-        ...prev.teams,
-        { id: uid(), name: name.trim(), color: color || TEAM_COLORS[prev.teams.length % TEAM_COLORS.length] },
-      ],
-    }));
+    setData((prev) => {
+      const competition = prev.competitions[activeTurn] || emptyCompetition();
+      return {
+        ...prev,
+        competitions: {
+          ...prev.competitions,
+          [activeTurn]: {
+            ...competition,
+            teams: [...competition.teams, { id: uid(), name: name.trim(), color: color || TEAM_COLORS[competition.teams.length % TEAM_COLORS.length] }],
+          },
+        },
+      };
+    });
   }
 
   function updateTeam(id, changes) {
     setData((prev) => ({
       ...prev,
-      teams: prev.teams.map((t) => (t.id === id ? { ...t, ...changes } : t)),
+      competitions: { ...prev.competitions, [activeTurn]: { ...prev.competitions[activeTurn], teams: prev.competitions[activeTurn].teams.map((t) => (t.id === id ? { ...t, ...changes } : t)) } },
     }));
   }
 
   function removeTeam(id) {
     setData((prev) => {
-      const newScores = { ...prev.scores };
+      const competition = prev.competitions[activeTurn];
+      const newScores = { ...competition.scores };
       Object.keys(newScores).forEach((eventId) => {
         if (newScores[eventId] && id in newScores[eventId]) {
           const copy = { ...newScores[eventId] };
@@ -206,8 +233,7 @@ export default function App() {
       });
       return {
         ...prev,
-        teams: prev.teams.filter((t) => t.id !== id),
-        scores: newScores,
+        competitions: { ...prev.competitions, [activeTurn]: { teams: competition.teams.filter((t) => t.id !== id), scores: newScores } },
       };
     });
   }
@@ -229,19 +255,23 @@ export default function App() {
 
   function removeEvent(id) {
     setData((prev) => {
-      const newScores = { ...prev.scores };
-      delete newScores[id];
+      const newCompetitions = Object.fromEntries(Object.entries(prev.competitions).map(([turn, competition]) => {
+        const newScores = { ...competition.scores };
+        delete newScores[id];
+        return [turn, { ...competition, scores: newScores }];
+      }));
       return {
         ...prev,
         events: prev.events.filter((e) => e.id !== id),
-        scores: newScores,
+        competitions: newCompetitions,
       };
     });
   }
 
   function setScore(eventId, teamId, value) {
     setData((prev) => {
-      const eventScores = { ...(prev.scores[eventId] || {}) };
+      const competition = prev.competitions[activeTurn];
+      const eventScores = { ...(competition.scores[eventId] || {}) };
       if (value === "" || value === null || value === undefined) {
         delete eventScores[teamId];
       } else {
@@ -250,17 +280,18 @@ export default function App() {
       }
       return {
         ...prev,
-        scores: { ...prev.scores, [eventId]: eventScores },
+        competitions: { ...prev.competitions, [activeTurn]: { ...competition, scores: { ...competition.scores, [eventId]: eventScores } } },
       };
     });
   }
 
-  const ranking = useMemo(() => {
-    const rows = teams.map((team) => {
+  const rankings = useMemo(() => Object.fromEntries(TURNS.map(({ id }) => {
+    const competition = competitions[id] || emptyCompetition();
+    const rows = competition.teams.map((team) => {
       let total = 0;
       let disputed = 0;
       events.forEach((ev) => {
-        const val = scores[ev.id] ? scores[ev.id][team.id] : undefined;
+        const val = competition.scores[ev.id] ? competition.scores[ev.id][team.id] : undefined;
         if (val !== undefined && val !== null) {
           total += Number(val) || 0;
           disputed += 1;
@@ -269,8 +300,9 @@ export default function App() {
       return { ...team, total, disputed };
     });
     rows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
-    return rows;
-  }, [teams, events, scores]);
+    return [id, rows];
+  })), [competitions, events]);
+  const ranking = rankings[activeTurn];
 
   function exportData() {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -303,7 +335,7 @@ export default function App() {
 
   function resetChampionship() {
     if (window.confirm("Apagar todas as equipes, provas e pontuações?")) {
-      setData({ teams: [], events: [], scores: {} });
+      setData({ events: [], competitions: { morning: emptyCompetition(), afternoon: emptyCompetition() } });
     }
   }
 
@@ -315,7 +347,7 @@ export default function App() {
   ];
 
   if (!isSupabaseConfigured) return <SetupRequired />;
-  if (!isAdminPage) return <PublicDashboard ranking={ranking} eventsCount={events.length} />;
+  if (!isAdminPage) return <PublicDashboard rankings={rankings} eventsCount={events.length} />;
   if (authState === "checking") return <LoadingScreen message="Verificando acesso administrativo..." />;
   if (authState !== "signed-in") return <AdminLogin state={authState} />;
 
@@ -349,6 +381,10 @@ export default function App() {
             );
           })}
         </nav>
+        <div className="max-w-6xl mx-auto px-4 pb-3 flex items-center gap-3">
+          <span className="text-xs text-slate-400">Competição:</span>
+          <TurnSelector activeTurn={activeTurn} onChange={setActiveTurn} />
+        </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-6">
@@ -383,7 +419,20 @@ export default function App() {
   );
 }
 
-function PublicDashboard({ ranking, eventsCount }) {
+function TurnSelector({ activeTurn, onChange }) {
+  return (
+    <div className="flex rounded-lg border border-white/10 overflow-hidden text-xs font-bold">
+      {TURNS.map((turn) => (
+        <button key={turn.id} type="button" onClick={() => onChange(turn.id)} className={`px-3 py-1.5 transition-colors ${activeTurn === turn.id ? "bg-amber-400 text-slate-900" : "bg-white/5 text-slate-300 hover:bg-white/10"}`}>
+          {turn.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PublicDashboard({ rankings, eventsCount }) {
+  const [activeTurn, setActiveTurn] = useState("morning");
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="border-b border-white/10 bg-slate-900/90 backdrop-blur">
@@ -394,8 +443,12 @@ function PublicDashboard({ ranking, eventsCount }) {
           <h1 className="text-lg font-bold">Gincana do conhecimento</h1>
         </div>
       </header>
-      <main className="max-w-6xl mx-auto px-4 py-6">
-        <Dashboard ranking={ranking} eventsCount={eventsCount} />
+      <main className="max-w-6xl mx-auto px-4 py-6 space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-slate-300">Acompanhe o ranking da competição.</p>
+          <TurnSelector activeTurn={activeTurn} onChange={setActiveTurn} />
+        </div>
+        <Dashboard ranking={rankings[activeTurn]} eventsCount={eventsCount} />
       </main>
     </div>
   );
