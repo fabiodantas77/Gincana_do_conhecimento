@@ -314,6 +314,11 @@ export default function App() {
     { id: "settings", label: "Configurações & Backup", icon: Settings },
   ];
 
+  if (!isSupabaseConfigured) return <SetupRequired />;
+  if (!isAdminPage) return <PublicDashboard ranking={ranking} eventsCount={events.length} />;
+  if (authState === "checking") return <LoadingScreen message="Verificando acesso administrativo..." />;
+  if (authState !== "signed-in") return <AdminLogin state={authState} />;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-900/90 backdrop-blur">
@@ -448,17 +453,6 @@ function AdminLogin({ state }) {
 function SaveIndicator({ status }) {
   const saving = status === "saving";
   const failed = status === "error";
-  if (!isSupabaseConfigured) {
-    return <SetupRequired />;
-  }
-
-  if (!isAdminPage) {
-    return <PublicDashboard ranking={ranking} eventsCount={events.length} />;
-  }
-
-  if (authState === "checking") return <LoadingScreen message="Verificando acesso administrativo..." />;
-  if (authState !== "signed-in") return <AdminLogin state={authState} />;
-
   return (
     <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border ${saving ? "border-amber-500/30 text-amber-300" : failed ? "border-red-500/30 text-red-300" : "border-emerald-500/30 text-emerald-300"}`}>
       <span className={`w-2 h-2 rounded-full ${saving ? "bg-amber-400 animate-pulse" : failed ? "bg-red-400" : "bg-emerald-400"}`} />
