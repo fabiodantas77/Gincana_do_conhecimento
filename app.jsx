@@ -19,6 +19,7 @@ const STORAGE_KEY = "gincana-campeonato-v1";
 const TURNS = [
   { id: "morning", label: "Turno Matutino" },
   { id: "afternoon", label: "Turno Vespertino" },
+  { id: "night", label: "Turno Noturno" },
 ];
 
 const TEAM_COLORS = [
@@ -74,6 +75,7 @@ function normalizeData(value) {
     competitions: {
       morning: normalizeCompetition(value.competitions?.morning || legacyCompetition, eventIds),
       afternoon: normalizeCompetition(value.competitions?.afternoon, eventIds),
+      night: normalizeCompetition(value.competitions?.night, eventIds),
     },
   };
 }
@@ -89,7 +91,7 @@ function loadInitialState() {
   } catch (e) {
     console.error("Falha ao carregar dados salvos:", e);
   }
-  return { events: [], competitions: { morning: emptyCompetition(), afternoon: emptyCompetition() } };
+  return { events: [], competitions: { morning: emptyCompetition(), afternoon: emptyCompetition(), night: emptyCompetition() } };
 }
 
 export default function App() {
@@ -335,7 +337,7 @@ export default function App() {
 
   function resetChampionship() {
     if (window.confirm("Apagar todas as equipes, provas e pontuações?")) {
-      setData({ events: [], competitions: { morning: emptyCompetition(), afternoon: emptyCompetition() } });
+      setData({ events: [], competitions: { morning: emptyCompetition(), afternoon: emptyCompetition(), night: emptyCompetition() } });
     }
   }
 
