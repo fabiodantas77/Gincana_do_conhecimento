@@ -349,7 +349,7 @@ export default function App() {
   ];
 
   if (!isSupabaseConfigured) return <SetupRequired />;
-  if (!isAdminPage) return <PublicDashboard rankings={rankings} eventsCount={events.length} />;
+  if (!isAdminPage) return <PublicDashboard rankings={rankings} events={events} competitions={competitions} eventsCount={events.length} />;
   if (authState === "checking") return <LoadingScreen message="Verificando acesso administrativo..." />;
   if (authState !== "signed-in") return <AdminLogin state={authState} />;
 
@@ -433,8 +433,14 @@ function TurnSelector({ activeTurn, onChange }) {
   );
 }
 
-function PublicDashboard({ rankings, eventsCount }) {
+function PublicDashboard({ rankings, events, competitions, eventsCount }) {
   const [activeTurn, setActiveTurn] = useState("morning");
+  const [activeTab, setActiveTab] = useState("ranking");
+  const publicTabs = [
+    { id: "ranking", label: "Classificação Geral", icon: Trophy },
+    { id: "events", label: "Pontuação por Prova", icon: ListChecks },
+  ];
+  const ranking = rankings[activeTurn] || [];
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="border-b border-white/10 bg-slate-900/90 backdrop-blur">
@@ -447,11 +453,60 @@ function PublicDashboard({ rankings, eventsCount }) {
       </header>
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-slate-300">Acompanhe o ranking da competição.</p>
+          <div className="flex rounded-lg border border-white/10 overflow-hidden text-xs font-bold">
+            {publicTabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-1.5 px-3 py-2 transition-colors ${activeTab === tab.id ? "bg-amber-400 text-slate-900" : "bg-white/5 text-slate-300 hover:bg-white/10"}`}>
+                  <Icon className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
           <TurnSelector activeTurn={activeTurn} onChange={setActiveTurn} />
         </div>
-        <Dashboard ranking={rankings[activeTurn]} eventsCount={eventsCount} />
+        {activeTab === "ranking" ? (
+          <Dashboard ranking={ranking} eventsCount={eventsCount} />
+        ) : (
+          <PublicScores teams={ranking} events={events} scores={competitions[activeTurn]?.scores || {}} />
+        )}
       </main>
+    </div>
+  );
+}
+
+function PublicScores({ teams, events, scores }) {
+  if (teams.length === 0) return <EmptyState title="Nenhuma equipe cadastrada" description="As pontuações serão exibidas quando houver equipes na competição." />;
+  if (events.length === 0) return <EmptyState title="Nenhuma prova cadastrada" description="As pontuações por prova aparecerão aqui assim que forem lançadas." />;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-xl font-bold flex items-center gap-2 text-amber-400"><ListChecks className="w-5 h-5" /> Pontuação por Prova</h2>
+        <p className="mt-1 text-sm text-slate-400">Confira os pontos de cada equipe em cada prova deste turno.</p>
+      </div>
+      <div className="rounded-xl border border-white/10 overflow-x-auto bg-white/[0.02]">
+        <table className="w-full text-sm min-w-[500px]">
+          <thead>
+            <tr className="bg-white/5 text-slate-300 text-left">
+              <th className="px-4 py-3">Prova</th>
+              {teams.map((team) => <th key={team.id} className="px-3 py-3 text-center whitespace-nowrap">{team.name}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {events.map((event) => (
+              <tr key={event.id} className="border-t border-white/5">
+                <td className="px-4 py-3 font-medium whitespace-nowrap">{event.name}</td>
+                {teams.map((team) => {
+                  const score = scores[event.id]?.[team.id];
+                  return <td key={team.id} className="px-3 py-3 text-center font-semibold">{score ?? <span className="font-normal text-slate-500">—</span>}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
